@@ -1,0 +1,30 @@
+{
+    "name": "sal/phpstan-readonly-enforcing",
+    "description": "PHPStan rule to enforce readonly usage on properties and classes when safe to do so",
+    "type": "phpstan-extension",
+    "require": {
+        "php": "^8.2",
+        "phpstan/phpstan": "^2"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.75",
+        "phpunit/phpunit": "^11.5"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Sal\\PhpstanReadonlyEnforcing\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Sal\\PhpstanReadonlyEnforcing\\Test\\": "tests/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Luca Saladino",
+            "email": "sal65535@protonmail.com"
+        }
+    ]
+}
