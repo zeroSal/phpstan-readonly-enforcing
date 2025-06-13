@@ -8,6 +8,7 @@ use PhpParser\Node\Expr\Assign;
 use PhpParser\Node\Expr\PropertyFetch;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
+use PhpParser\Node\Param;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Property;
@@ -27,12 +28,13 @@ class EnforceReadonlyRule implements Rule
 
     public function processNode(Node $node, Scope $scope): array
     {
+        /** @var Class_ $class */
         $class = $node;
         $constructor = $this->getConstructor($class);
-        if (!$constructor) return [];
 
         $promotedParams = $this->getPromotedParams($constructor);
-        $overwrittenProps = $this->getOverwrittenProperties($class);
+        $overwrittenAssignments = $this->getOverwrittenProperties($class);
+        $overwrittenProps = array_keys($overwrittenAssignments);
 
         if ($this->shouldClassBeReadonly($class, $promotedParams, $overwrittenProps)) {
             return [
@@ -55,6 +57,26 @@ class EnforceReadonlyRule implements Rule
             $this->getPromotedPropertyStateErrors($promotedParams, $overwrittenProps, $class)
         );
 
+        foreach ($overwrittenAssignments as $property => $nodes) {
+            $propertyNode = $this->getPropertyNodeByName($class, $property);
+
+            if (
+                null !== $propertyNode
+                && (
+                    ($propertyNode instanceof Property && ($propertyNode->flags & Modifiers::READONLY) !== 0)
+                    || ($propertyNode instanceof Param && $this->isReadonlyClass($class))
+                )
+            ) {
+                for ($i = 1, $count = count($nodes); $i < $count; ++$i) {
+                    $errors[] = RuleErrorBuilder::message(
+                        sprintf('The readonly property "$%s" is assigned more than once.', $property)
+                    )
+                        ->line($nodes[$i]->getLine())
+                        ->build();
+                }
+            }
+        }
+
         return $errors;
     }
 
@@ -63,14 +85,22 @@ class EnforceReadonlyRule implements Rule
         return $class->getMethod('__construct');
     }
 
-    private function getPromotedParams(ClassMethod $constructor): array
+    /**
+     * @return Param[]
+     */
+    private function getPromotedParams(?ClassMethod $constructor): array
     {
+        if (null === $constructor) {
+            return [];
+        }
+
         $params = [];
         foreach ($constructor->params as $param) {
-            if ($param->flags !== 0 && $param->var instanceof Variable) {
+            if ($param->var instanceof Variable && 0 !== $param->flags) {
                 $params[$param->var->name] = $param;
             }
         }
+
         return $params;
     }
 
@@ -94,11 +124,13 @@ class EnforceReadonlyRule implements Rule
         $errors = [];
 
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof Property && ($stmt->flags & Modifiers::READONLY)) {
+            if ($stmt instanceof Property && ($stmt->flags & Modifiers::READONLY) !== 0) {
                 foreach ($stmt->props as $prop) {
                     $errors[] = RuleErrorBuilder::message(
                         sprintf('The readonly class contains redundant readonly property "$%s".', $prop->name->name)
-                    )->build();
+                    )
+                    ->line($prop->getLine())
+                    ->build();
                 }
             }
         }
@@ -110,33 +142,47 @@ class EnforceReadonlyRule implements Rule
     {
         $errors = [];
         foreach ($constructor->params as $param) {
-            if (($param->flags & Modifiers::READONLY) && $param->var instanceof Variable) {
+            if ($param->var instanceof Variable && ($param->flags & Modifiers::READONLY) !== 0) {
                 $errors[] = RuleErrorBuilder::message(
                     sprintf('The readonly class contains redundant readonly promoted property "$%s".', $param->var->name)
-                )->build();
+                )
+                ->line($param->getLine())
+                ->build();
             }
         }
 
         return $errors;
     }
 
-    private function getPromotedPropertyStateErrors(array $promotedParams, array $overwrittenProps, Class_ $class): array
-    {
+    private function getPromotedPropertyStateErrors(
+        array $promotedParams,
+        array $overwrittenProps,
+        Class_ $class,
+    ): array {
         $errors = [];
+
+        $isClassReadonly = $this->isReadonlyClass($class);
+
         foreach ($promotedParams as $name => $param) {
-            $isReadonly = ($param->flags & Modifiers::READONLY) || $this->isReadonlyClass($class);
+            $isParamReadonly = ($param->flags & Modifiers::READONLY) !== 0;
             $isOverwritten = in_array($name, $overwrittenProps, true);
 
-            if (!$isReadonly && !$isOverwritten) {
-                $errors[] = RuleErrorBuilder::message(
-                    sprintf('The property "$%s" should be readonly.', $name)
-                )->build();
-            }
+            $isReadonly = $isClassReadonly || $isParamReadonly;
 
             if ($isReadonly && $isOverwritten) {
                 $errors[] = RuleErrorBuilder::message(
                     sprintf('The readonly property "$%s" is lately overwritten.', $name)
-                )->build();
+                )
+                ->line($param->getLine())
+                ->build();
+            }
+
+            if (!$isReadonly && !$isOverwritten) {
+                $errors[] = RuleErrorBuilder::message(
+                    sprintf('The property "$%s" should be readonly.', $name)
+                )
+                ->line($param->getLine())
+                ->build();
             }
         }
 
@@ -145,29 +191,43 @@ class EnforceReadonlyRule implements Rule
 
     private function getOverwrittenProperties(Class_ $class): array
     {
-        $overwritten = [];
+        $assignments = [];
+
         foreach ($class->getMethods() as $method) {
-            if (!$method->stmts) continue;
+            if (!$method->stmts) {
+                continue;
+            }
 
             foreach ($method->stmts as $stmt) {
-                $this->collectOverwrittenProperties($stmt, $overwritten);
+                $this->collectOverwrittenProperties($stmt, $assignments);
+            }
+        }
+
+        $overwritten = [];
+        foreach ($assignments as $propertyName => $nodes) {
+            if (!is_string($propertyName)) {
+                continue;
+            }
+
+            if (count($nodes) >= 1) {
+                $overwritten[$propertyName] = $nodes;
             }
         }
 
         return $overwritten;
     }
 
-    private function collectOverwrittenProperties(Node $node, array &$overwritten): void
+    private function collectOverwrittenProperties(Node $node, array &$assignments): void
     {
         if ($node instanceof Assign && $node->var instanceof PropertyFetch) {
             $var = $node->var;
 
-            if ($var->var instanceof Variable && $var->var->name === 'this' && $var->name instanceof Identifier) {
+            if ($var->var instanceof Variable
+                && 'this' === $var->var->name
+                && $var->name instanceof Identifier
+            ) {
                 $propertyName = $var->name->name;
-
-                if (!in_array($propertyName, $overwritten, true)) {
-                    $overwritten[] = $propertyName;
-                }
+                $assignments[$propertyName][] = $node;
             }
         }
 
@@ -176,11 +236,11 @@ class EnforceReadonlyRule implements Rule
             if (is_array($child)) {
                 foreach ($child as $subNode) {
                     if ($subNode instanceof Node) {
-                        $this->collectOverwrittenProperties($subNode, $overwritten);
+                        $this->collectOverwrittenProperties($subNode, $assignments);
                     }
                 }
             } elseif ($child instanceof Node) {
-                $this->collectOverwrittenProperties($child, $overwritten);
+                $this->collectOverwrittenProperties($child, $assignments);
             }
         }
     }
@@ -188,5 +248,34 @@ class EnforceReadonlyRule implements Rule
     private function isReadonlyClass(Class_ $class): bool
     {
         return ($class->flags & Modifiers::READONLY) !== 0;
+    }
+
+    private function getPropertyNodeByName(Class_ $class, string $name): ?Node
+    {
+        foreach ($class->stmts as $stmt) {
+            if (!$stmt instanceof Property) {
+                continue;
+            }
+
+            foreach ($stmt->props as $prop) {
+                if ($prop->name->name === $name) {
+                    return $stmt;
+                }
+            }
+        }
+
+        $constructor = $this->getConstructor($class);
+        if ($constructor) {
+            foreach ($constructor->params as $param) {
+                if ($param->var instanceof Variable
+                    && $param->var->name === $name
+                    && 0 !== $param->flags // promoted
+                ) {
+                    return $param;
+                }
+            }
+        }
+
+        return null;
     }
 }

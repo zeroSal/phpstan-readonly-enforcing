@@ -8,7 +8,16 @@
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.75",
-        "phpunit/phpunit": "^11.5"
+        "phpunit/phpunit": "^9.6",
+        "symfony/var-dumper": "^7.3"
+    },
+    "scripts": {
+        "fix-code": [
+            "vendor/bin/php-cs-fixer fix"
+        ],
+        "test": [
+            "./vendor/bin/phpunit --colors=never -c phpunit.xml.dist -d memory_limit=512M"
+        ]
     },
     "license": "MIT",
     "autoload": {
