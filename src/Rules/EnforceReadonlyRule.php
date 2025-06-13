@@ -138,8 +138,12 @@ class EnforceReadonlyRule implements Rule
         return $errors;
     }
 
-    private function getRedundantReadonlyPromotedParamErrors(ClassMethod $constructor): array
+    private function getRedundantReadonlyPromotedParamErrors(?ClassMethod $constructor): array
     {
+        if (null === $constructor) {
+            return [];
+        }
+
         $errors = [];
         foreach ($constructor->params as $param) {
             if ($param->var instanceof Variable && ($param->flags & Modifiers::READONLY) !== 0) {
