@@ -24,11 +24,8 @@ composer require --dev sal/phpstan-readonly-enforcing
 ## Configuration
 Add the rule to your `phpstan.neon`:
 ```neon
-services:
-    -
-        class: Sal\PHPStanReadonlyEnforcing\Rules\ReadonlyEnforcingRule
-        tags:
-            - phpstan.rules.rule
+rules:
+	- Sal\PhpstanReadonlyEnforcing\Rules\EnforceReadonlyRule
 ```
 
 ## Example
