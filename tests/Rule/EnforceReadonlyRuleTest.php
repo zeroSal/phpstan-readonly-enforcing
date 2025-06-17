@@ -9,6 +9,7 @@ use PHPStan\Testing\RuleTestCase;
 use ReflectionClass;
 use Sal\PhpstanReadonlyEnforcing\Rules\EnforceReadonlyRule;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\Abstract_Readonly;
+use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\CanBeReadonlyExtendsNonReadonly;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\LateInit_Readonly_Traditional;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\MutableInsideReadonly;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\Mixed\Mixed_PromotedPartialReadonly;
@@ -142,6 +143,9 @@ class EnforceReadonlyRuleTest extends RuleTestCase
         ]);
 
         $this->analyseClass(Abstract_Readonly::class, [
+        ]);
+
+        $this->analyseClass(CanBeReadonlyExtendsNonReadonly::class, [
         ]);
 
         // $this->analyseClass(Trait_Readonly_Use::class, [
