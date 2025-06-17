@@ -15,6 +15,7 @@ use PhpParser\Node\Stmt\Property;
 use PHPStan\Analyser\Scope;
 use PHPStan\Rules\Rule;
 use PHPStan\Rules\RuleErrorBuilder;
+use ReflectionClass;
 
 /**
  * @implements Rule<Class_>
@@ -108,6 +109,18 @@ class EnforceReadonlyRule implements Rule
     {
         if ($this->isReadonlyClass($class) || empty($promotedParams)) {
             return false;
+        }
+
+        if ($class->extends instanceof Node\Name) {
+            $parentClassName = (string) $class->extends;
+            if (!class_exists($parentClassName)) {
+                return false;
+            }
+
+            $reflection = new ReflectionClass($parentClassName);
+            if (!$reflection->isReadOnly()) {
+                return false;
+            }
         }
 
         foreach (array_keys($promotedParams) as $name) {
