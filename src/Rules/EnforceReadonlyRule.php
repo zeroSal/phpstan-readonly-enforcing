@@ -12,16 +12,29 @@ use PhpParser\Node\Param;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Property;
+use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor\NameResolver;
+use PhpParser\NodeVisitorAbstract;
+use PhpParser\ParserFactory;
 use PHPStan\Analyser\Scope;
+use PHPStan\Reflection\ReflectionProvider;
 use PHPStan\Rules\Rule;
 use PHPStan\Rules\RuleErrorBuilder;
 use ReflectionClass;
+use Symfony\Component\Finder\Finder;
 
 /**
  * @implements Rule<Class_>
  */
 class EnforceReadonlyRule implements Rule
 {
+    public function __construct(
+        private readonly ReflectionProvider $reflectionProvider,
+        private readonly ParserFactory $parserFactory,
+        private readonly string $projectDir,
+    ) {
+    }
+
     public function getNodeType(): string
     {
         return Class_::class;
@@ -121,6 +134,10 @@ class EnforceReadonlyRule implements Rule
             if (!$reflection->isReadOnly()) {
                 return false;
             }
+        }
+
+        if ($this->isExtendedByNonReadonlyClass($class)) {
+            return false;
         }
 
         foreach (array_keys($promotedParams) as $name) {
@@ -239,7 +256,8 @@ class EnforceReadonlyRule implements Rule
         if ($node instanceof Assign && $node->var instanceof PropertyFetch) {
             $var = $node->var;
 
-            if ($var->var instanceof Variable
+            if (
+                $var->var instanceof Variable
                 && 'this' === $var->var->name
                 && $var->name instanceof Identifier
             ) {
@@ -284,7 +302,8 @@ class EnforceReadonlyRule implements Rule
         $constructor = $this->getConstructor($class);
         if ($constructor) {
             foreach ($constructor->params as $param) {
-                if ($param->var instanceof Variable
+                if (
+                    $param->var instanceof Variable
                     && $param->var->name === $name
                     && 0 !== $param->flags // promoted
                 ) {
@@ -294,5 +313,68 @@ class EnforceReadonlyRule implements Rule
         }
 
         return null;
+    }
+
+    private function isExtendedByNonReadonlyClass(Class_ $class): bool
+    {
+        if (!$class->namespacedName) {
+            return false;
+        }
+
+        $className = $class->namespacedName->toString();
+
+        if (!$this->reflectionProvider->hasClass($className)) {
+            return false;
+        }
+
+        $all = $this->findAllClassesInDir($this->projectDir);
+        foreach ($all as $candidate) {
+            if (!$this->reflectionProvider->hasClass($candidate)) {
+                continue;
+            }
+
+            $childRef = $this->reflectionProvider->getClass($candidate);
+            if ($childRef->isSubclassOf($className) && !$childRef->isReadOnly()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function findAllClassesInDir(string $directory): array
+    {
+        $finder = new Finder();
+        $finder->files()->in($directory)->name('*.php');
+
+        $parser = $this->parserFactory->createForHostVersion();
+        $traverser = new NodeTraverser();
+
+        $nameResolver = new NameResolver();
+        $traverser->addVisitor($nameResolver);
+
+        $collector = new class extends NodeVisitorAbstract {
+            public array $classes = [];
+
+            public function enterNode(Node $node)
+            {
+                if ($node instanceof Class_ && isset($node->namespacedName)) {
+                    $this->classes[] = (string) $node->namespacedName;
+                }
+            }
+        };
+
+        $traverser->addVisitor($collector);
+        foreach ($finder as $file) {
+            $ast = $parser->parse($file->getContents());
+            if (null !== $ast) {
+                $traverser->traverse($ast);
+            }
+        }
+
+        return $collector->classes;
     }
 }
