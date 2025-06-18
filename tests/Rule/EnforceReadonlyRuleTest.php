@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Sal\PhpstanReadonlyEnforcing\Test\Rule;
 
+use PhpParser\ParserFactory;
 use PHPStan\Rules\Rule;
 use PHPStan\Testing\RuleTestCase;
 use ReflectionClass;
 use Sal\PhpstanReadonlyEnforcing\Rules\EnforceReadonlyRule;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\Abstract_Readonly;
+use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\BaseCannotBeReadonly;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\CanBeReadonlyExtendsNonReadonly;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\LateInit_Readonly_Traditional;
 use Sal\PhpstanReadonlyEnforcing\Test\Dummy\EdgeCases\MutableInsideReadonly;
@@ -38,7 +40,11 @@ class EnforceReadonlyRuleTest extends RuleTestCase
 {
     protected function getRule(): Rule
     {
-        return new EnforceReadonlyRule();
+        return new EnforceReadonlyRule(
+            $this->createReflectionProvider(),
+            new ParserFactory(),
+            __DIR__.'/..',
+        );
     }
 
     public function testPromotedReadonlyClass(): void
@@ -146,6 +152,9 @@ class EnforceReadonlyRuleTest extends RuleTestCase
         ]);
 
         $this->analyseClass(CanBeReadonlyExtendsNonReadonly::class, [
+        ]);
+
+        $this->analyseClass(BaseCannotBeReadonly::class, [
         ]);
 
         // $this->analyseClass(Trait_Readonly_Use::class, [

@@ -26,6 +26,14 @@ Add the rule to your `phpstan.neon`:
 ```neon
 rules:
 	- Sal\PhpstanReadonlyEnforcing\Rules\EnforceReadonlyRule
+
+services:
+    -
+        class: Sal\PhpstanReadonlyEnforcing\Rules\EnforceReadonlyRule
+        arguments:
+            $reflectionProvider: @phpstan.reflectionProvider
+            $parserFactory: @phpstan.parserFactory
+            $projectDir: %currentWorkingDirectory%
 ```
 
 ## Example
