@@ -30,7 +30,6 @@ class EnforceReadonlyRule implements Rule
 {
     public function __construct(
         private readonly ReflectionProvider $reflectionProvider,
-        private readonly ParserFactory $parserFactory,
         private readonly string $projectDir,
     ) {
     }
@@ -350,7 +349,7 @@ class EnforceReadonlyRule implements Rule
         $finder = new Finder();
         $finder->files()->in($directory)->name('*.php');
 
-        $parser = $this->parserFactory->createForHostVersion();
+        $parser = (new ParserFactory())->createForHostVersion();
         $traverser = new NodeTraverser();
 
         $nameResolver = new NameResolver();
