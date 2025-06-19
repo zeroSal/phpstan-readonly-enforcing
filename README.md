@@ -31,9 +31,8 @@ services:
     -
         class: Sal\PhpstanReadonlyEnforcing\Rules\EnforceReadonlyRule
         arguments:
-            $reflectionProvider: @phpstan.reflectionProvider
-            $parserFactory: @phpstan.parserFactory
-            $projectDir: %currentWorkingDirectory%
+            reflectionProvider: @phpstan.reflectionProvider
+            projectDir: %currentWorkingDirectory%
 ```
 
 ## Example
